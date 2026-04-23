@@ -18,11 +18,10 @@ async fn main() -> Result<()> {
     let slave = Slave(255);
     let mut ctx = tcp::connect_slave(socket_addr, slave).await?;
 
-    let pv = ctx.read_holding_registers(11028, 3).await??;
-//    println!("DEBUG: pv = {:?}", pv);
+    let pv = ctx.read_holding_registers(11028, 2).await??;
     let pv_power_kw = pv[1] as f32 / 1000.0;
 
-    let temp = ctx.read_holding_registers(11033, 1).await??;
+    let temp = ctx.read_holding_registers(11032, 1).await??;
     let inverter_temp_c = temp[0] as f32 / 10.0;
 
     let soc = ctx.read_holding_registers(11056, 1).await??;
