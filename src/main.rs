@@ -1,9 +1,16 @@
 // solinteg mht-10k-25
 
-use anyhow::Result;
+use anyhow::{Context, Result};
+use serde::Deserialize;
 use std::net::SocketAddr;
 use tokio_modbus::client::tcp;
 use tokio_modbus::prelude::*;
+
+#[derive(Deserialize)]
+struct Config {
+    host: String,
+    port: u16,
+}
 
 fn u16_to_i16(v: u16) -> i16 {
     v as i16
@@ -15,7 +22,19 @@ fn regs_to_i32_be(high: u16, low: u16) -> i32 {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let socket_addr: SocketAddr = "192.168.1.142:502".parse()?;
+    let args: Vec<String> = std::env::args().collect();
+    let config_path = args
+        .windows(2)
+        .find(|w| w[0] == "-c")
+        .map(|w| &w[1])
+        .context("usage: solinteg-read -c config.toml")?;
+
+    let config_str = std::fs::read_to_string(config_path)
+        .with_context(|| format!("failed to read {config_path}"))?;
+    let config: Config = toml::from_str(&config_str)
+        .with_context(|| format!("failed to parse {config_path}"))?;
+
+    let socket_addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
 
     let slave = Slave(255);
     let mut ctx = tcp::connect_slave(socket_addr, slave).await?;
@@ -37,7 +56,7 @@ async fn main() -> Result<()> {
 
     println!("PV power:        {:.3} kW", pv_power_kw);
     println!("Inverter temp:   {:.1} °C", inverter_temp_c);
-    println!("SOC:             {:.2} %", soc_percent);
+    println!("SOC:             {:} %", soc_percent);
     println!("Battery current: {:.1} A", battery_current_a);
     println!("Battery power:   {:.3} kW", battery_power_kw);
 
