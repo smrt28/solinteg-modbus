@@ -1,0 +1,10 @@
+[package]
+name = "solinteg-read"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-modbus = "0.17"
+anyhow = "1"
+
