@@ -1,3 +1,5 @@
+// solinteg mht-10k-25
+
 use anyhow::Result;
 use std::net::SocketAddr;
 use tokio_modbus::client::tcp;
