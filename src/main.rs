@@ -42,6 +42,9 @@ async fn main() -> Result<()> {
     let pv = ctx.read_holding_registers(11028, 2).await??;
     let pv_power_kw = pv[1] as f32 / 1000.0;
 
+    let home_load = ctx.read_holding_registers(11016, 2).await??;
+    let home_load_kw = home_load[1] as f32 / 1000.0;
+
     let temp = ctx.read_holding_registers(11032, 1).await??;
     let inverter_temp_c = temp[0] as f32 / 10.0;
 
@@ -55,6 +58,7 @@ async fn main() -> Result<()> {
     let battery_power_kw = regs_to_i32_be(batt_p[0], batt_p[1]) as f32 / 1000.0;
 
     println!("PV power:        {:.3} kW", pv_power_kw);
+    println!("Home load:       {:.3} kW", home_load_kw);
     println!("Inverter temp:   {:.1} °C", inverter_temp_c);
     println!("SOC:             {:} %", soc_percent);
     println!("Battery current: {:.1} A", battery_current_a);
