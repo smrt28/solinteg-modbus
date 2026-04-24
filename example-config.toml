@@ -1,11 +1,11 @@
 host = "192.168.1.142"
 port = 502
-poll_interval_seconds = 5
+poll_interval_seconds = 10
 
 [influxdb]
-write_url = "https://your-influxdb.example.com/api/v2/write"
-token = "your_influxdb_token"
-org = "home"
-bucket = "solar"
+write_url = "http://127.0.0.1:8086/api/v2/write"
+token = "qz1f307JR9hhfC_AxGm-1NnjOJ3piuOxFCTh4nw8KzLwFx3lSJRuJZX4BPDstiIzlqLZAABhKoCCbKxF6bJO7g=="
+org = "62dabfd19887ee5b"
+bucket = "937923b5c114577c"
 measurement = "solinteg_readings"
 device = "garage-inverter"

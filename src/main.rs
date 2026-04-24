@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio_modbus::client::tcp;
 use tokio_modbus::prelude::*;
+use log::{info};
+
 
 #[derive(Deserialize)]
 struct Config {
@@ -228,10 +230,22 @@ async fn push_to_influxdb(
     Ok(())
 }
 
+fn check_readings_consistency(readings: &Readings) -> bool {
+    if readings.pv_power_kw > 60.0 ||
+        readings.home_load_kw > 60.0 ||
+        readings.soc_percent > 100.0 ||
+        readings.soc_percent < 0.0 {
+        return false;
+    }
+    true
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    env_logger::init();
     let args: Vec<String> = std::env::args().collect();
     let json_output = has_flag(&args, "-j");
+    let one = has_flag(&args, "-1");
     let config_path =
         config_path_from_args(&args, std::env::var_os("HOME").as_deref().map(Path::new))?;
     let config_path_display = config_path.display().to_string();
@@ -247,24 +261,52 @@ async fn main() -> Result<()> {
     let poll_interval = Duration::from_secs(config.poll_interval_seconds.max(1));
     let mut ticker = tokio::time::interval(poll_interval);
 
-    loop {
-        ticker.tick().await;
-
+    if one {
         match read_inverter(socket_addr).await {
             Ok(readings) => {
+                if !check_readings_consistency(&readings) {
+                    info!("reading failed");
+                    return Ok(());
+                }
+                if json_output {
+                    println!("{}", serde_json::to_string(&readings)?);
+                } else {
+                    println!("{}", format_readings(&readings));
+                }
+            }
+            Err(err) => eprintln!("inverter read error: {err:#}"),
+        }
+        return Ok(());
+    }
+
+    loop {
+        ticker.tick().await;
+        match read_inverter(socket_addr).await {
+            Ok(readings) => {
+                if !check_readings_consistency(&readings) {
+                    info!("reading failed");
+                    continue;
+                }
                 if json_output {
                     println!("{}", serde_json::to_string(&readings)?);
                 } else {
                     println!("{}", format_readings(&readings));
                 }
 
-                if let Err(err) = push_to_influxdb(&client, &config.influxdb, &readings).await {
-                    eprintln!("influxdb push error: {err:#}");
+                if !one {
+                    if let Err(err) = push_to_influxdb(&client, &config.influxdb, &readings).await {
+                        eprintln!("influxdb push error: {err:#}");
+                    }
                 }
             }
             Err(err) => eprintln!("inverter read error: {err:#}"),
         }
+
+        if one {
+            break;
+        }
     }
+    Ok(())
 }
 
 #[cfg(test)]
