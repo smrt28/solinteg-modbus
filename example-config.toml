@@ -2,10 +2,10 @@ host = "192.168.1.142"
 port = 502
 poll_interval_seconds = 5
 
-[grafana]
-push_url = "https://logs-prod-012.grafana.net/loki/api/v1/push"
-username = "123456"
-api_key = "glc_your_api_key"
-tenant_id = "123456"
-job = "solinteg_read"
+[influxdb]
+write_url = "https://your-influxdb.example.com/api/v2/write"
+token = "your_influxdb_token"
+org = "home"
+bucket = "solar"
+measurement = "solinteg_readings"
 device = "garage-inverter"

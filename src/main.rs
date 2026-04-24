@@ -14,17 +14,21 @@ struct Config {
     port: u16,
     #[serde(default = "default_poll_interval_seconds")]
     poll_interval_seconds: u64,
-    grafana: GrafanaConfig,
+    #[serde(alias = "grafana")]
+    influxdb: InfluxDbConfig,
 }
 
 #[derive(Deserialize)]
-struct GrafanaConfig {
-    push_url: String,
+struct InfluxDbConfig {
+    write_url: String,
+    token: Option<String>,
     username: Option<String>,
-    api_key: Option<String>,
-    tenant_id: Option<String>,
-    #[serde(default = "default_grafana_job")]
-    job: String,
+    password: Option<String>,
+    database: Option<String>,
+    org: Option<String>,
+    bucket: Option<String>,
+    #[serde(default = "default_measurement")]
+    measurement: String,
     device: Option<String>,
 }
 
@@ -38,31 +42,12 @@ struct Readings {
     battery_power_kw: f32,
 }
 
-#[derive(Serialize)]
-struct LokiPushRequest {
-    streams: Vec<LokiStream>,
-}
-
-#[derive(Serialize)]
-struct LokiStream {
-    stream: LokiLabels,
-    values: Vec<[String; 2]>,
-}
-
-#[derive(Serialize)]
-struct LokiLabels {
-    job: String,
-    source: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    device: Option<String>,
-}
-
 fn default_poll_interval_seconds() -> u64 {
     5
 }
 
-fn default_grafana_job() -> String {
-    "solinteg_read".to_string()
+fn default_measurement() -> String {
+    "solinteg_readings".to_string()
 }
 
 fn u16_to_i16(v: u16) -> i16 {
@@ -159,48 +144,86 @@ fn current_timestamp_nanos() -> Result<String> {
         .to_string())
 }
 
-fn build_loki_payload(
-    readings: &Readings,
-    grafana: &GrafanaConfig,
-    timestamp_nanos: String,
-) -> Result<LokiPushRequest> {
-    let reading_json =
-        serde_json::to_string(readings).context("failed to serialize readings for Grafana")?;
-
-    Ok(LokiPushRequest {
-        streams: vec![LokiStream {
-            stream: LokiLabels {
-                job: grafana.job.clone(),
-                source: "solinteg-read".to_string(),
-                device: grafana.device.clone(),
-            },
-            values: vec![[timestamp_nanos, reading_json]],
-        }],
-    })
+fn escape_tag(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace(',', "\\,")
+        .replace(' ', "\\ ")
+        .replace('=', "\\=")
 }
 
-async fn push_to_grafana(
-    client: &reqwest::Client,
-    grafana: &GrafanaConfig,
+fn build_influx_line_protocol(
     readings: &Readings,
-) -> Result<()> {
-    let payload = build_loki_payload(readings, grafana, current_timestamp_nanos()?)?;
-    let mut request = client.post(&grafana.push_url).json(&payload);
+    influxdb: &InfluxDbConfig,
+    timestamp_nanos: &str,
+) -> String {
+    let mut line = format!("{},source=solinteg-read", escape_tag(&influxdb.measurement));
 
-    if let (Some(username), Some(api_key)) = (&grafana.username, &grafana.api_key) {
-        request = request.basic_auth(username, Some(api_key));
+    if let Some(device) = &influxdb.device {
+        line.push_str(",device=");
+        line.push_str(&escape_tag(device));
     }
 
-    if let Some(tenant_id) = &grafana.tenant_id {
-        request = request.header("X-Scope-OrgID", tenant_id);
+    line.push_str(&format!(
+        " pv_power_kw={},home_load_kw={},inverter_temp_c={},soc_percent={},battery_current_a={},battery_power_kw={} {}",
+        readings.pv_power_kw,
+        readings.home_load_kw,
+        readings.inverter_temp_c,
+        readings.soc_percent,
+        readings.battery_current_a,
+        readings.battery_power_kw,
+        timestamp_nanos
+    ));
+
+    line
+}
+
+fn influx_write_url(influxdb: &InfluxDbConfig) -> Result<reqwest::Url> {
+    let mut url =
+        reqwest::Url::parse(&influxdb.write_url).context("failed to parse InfluxDB write_url")?;
+    {
+        let mut pairs = url.query_pairs_mut();
+        if let Some(database) = &influxdb.database {
+            pairs.append_pair("db", database);
+        }
+        if let Some(org) = &influxdb.org {
+            pairs.append_pair("org", org);
+        }
+        if let Some(bucket) = &influxdb.bucket {
+            pairs.append_pair("bucket", bucket);
+        }
+        pairs.append_pair("precision", "ns");
+    }
+    Ok(url)
+}
+
+async fn push_to_influxdb(
+    client: &reqwest::Client,
+    influxdb: &InfluxDbConfig,
+    readings: &Readings,
+) -> Result<()> {
+    let timestamp_nanos = current_timestamp_nanos()?;
+    let payload = build_influx_line_protocol(readings, influxdb, &timestamp_nanos);
+    let write_url = influx_write_url(influxdb)?;
+    let mut request = client
+        .post(write_url)
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .body(payload);
+
+    if let Some(token) = &influxdb.token {
+        request = request.header("Authorization", format!("Token {token}"));
+    }
+
+    if let (Some(username), Some(password)) = (&influxdb.username, &influxdb.password) {
+        request = request.basic_auth(username, Some(password));
     }
 
     request
         .send()
         .await
-        .context("failed to send readings to Grafana")?
+        .context("failed to send readings to InfluxDB")?
         .error_for_status()
-        .context("Grafana rejected readings")?;
+        .context("InfluxDB rejected readings")?;
 
     Ok(())
 }
@@ -235,8 +258,8 @@ async fn main() -> Result<()> {
                     println!("{}", format_readings(&readings));
                 }
 
-                if let Err(err) = push_to_grafana(&client, &config.grafana, &readings).await {
-                    eprintln!("grafana push error: {err:#}");
+                if let Err(err) = push_to_influxdb(&client, &config.influxdb, &readings).await {
+                    eprintln!("influxdb push error: {err:#}");
                 }
             }
             Err(err) => eprintln!("inverter read error: {err:#}"),
@@ -315,31 +338,34 @@ mod tests {
     }
 
     #[test]
-    fn config_defaults_poll_interval_and_job() {
+    fn config_defaults_poll_interval_and_measurement() {
         let config: Config = toml::from_str(
             r#"
 host = "192.168.1.142"
 port = 502
 
-[grafana]
-push_url = "https://logs-prod.example.com/loki/api/v1/push"
+[influxdb]
+write_url = "https://influx.example.com/api/v2/write"
 "#,
         )
         .unwrap();
 
         assert_eq!(config.poll_interval_seconds, 5);
-        assert_eq!(config.grafana.job, "solinteg_read");
+        assert_eq!(config.influxdb.measurement, "solinteg_readings");
     }
 
     #[test]
-    fn build_loki_payload_includes_all_readings() {
-        let grafana = GrafanaConfig {
-            push_url: "https://logs-prod.example.com/loki/api/v1/push".to_string(),
-            username: Some("user".to_string()),
-            api_key: Some("secret".to_string()),
-            tenant_id: None,
-            job: "solinteg_read".to_string(),
+    fn build_influx_line_protocol_includes_all_readings() {
+        let influxdb = InfluxDbConfig {
+            write_url: "https://influx.example.com/api/v2/write".to_string(),
+            token: Some("secret".to_string()),
+            username: None,
+            password: None,
+            database: None,
+            org: Some("home".to_string()),
+            bucket: Some("solar".to_string()),
             device: Some("garage-inverter".to_string()),
+            measurement: "solinteg_readings".to_string(),
         };
         let readings = Readings {
             pv_power_kw: 1.234,
@@ -350,15 +376,33 @@ push_url = "https://logs-prod.example.com/loki/api/v1/push"
             battery_power_kw: -1.111,
         };
 
-        let payload = build_loki_payload(&readings, &grafana, "123".to_string()).unwrap();
-        let json = serde_json::to_value(payload).unwrap();
+        let payload = build_influx_line_protocol(&readings, &influxdb, "123");
 
-        assert_eq!(json["streams"][0]["stream"]["job"], "solinteg_read");
-        assert_eq!(json["streams"][0]["stream"]["device"], "garage-inverter");
-        assert_eq!(json["streams"][0]["values"][0][0], "123");
         assert_eq!(
-            json["streams"][0]["values"][0][1],
-            "{\"pv_power_kw\":1.234,\"home_load_kw\":2.345,\"inverter_temp_c\":30.5,\"soc_percent\":88.0,\"battery_current_a\":-4.2,\"battery_power_kw\":-1.111}"
+            payload,
+            "solinteg_readings,source=solinteg-read,device=garage-inverter pv_power_kw=1.234,home_load_kw=2.345,inverter_temp_c=30.5,soc_percent=88,battery_current_a=-4.2,battery_power_kw=-1.111 123"
+        );
+    }
+
+    #[test]
+    fn influx_write_url_includes_query_parameters() {
+        let influxdb = InfluxDbConfig {
+            write_url: "https://influx.example.com/api/v2/write".to_string(),
+            token: None,
+            username: None,
+            password: None,
+            database: Some("solinteg".to_string()),
+            org: Some("home".to_string()),
+            bucket: Some("solar".to_string()),
+            measurement: "solinteg_readings".to_string(),
+            device: None,
+        };
+
+        let url = influx_write_url(&influxdb).unwrap();
+
+        assert_eq!(
+            url.as_str(),
+            "https://influx.example.com/api/v2/write?db=solinteg&org=home&bucket=solar&precision=ns"
         );
     }
 }
