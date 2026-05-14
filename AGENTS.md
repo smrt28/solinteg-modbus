@@ -21,7 +21,7 @@ Use Rust 2021 idioms and keep code formatted with `rustfmt`. Prefer four-space i
 
 ## Testing Guidelines
 
-Tests currently live in the `#[cfg(test)]` module inside `src/main.rs`. Name tests after the behavior under test, such as `config_path_from_args_uses_explicit_c_value`. Add tests for parsing, formatting, URL construction, line protocol, and numeric register conversions. Avoid tests that require a live inverter or InfluxDB instance unless they are clearly marked and isolated from `cargo test`.
+Unit tests live in `src/tests.rs` and are included from `src/main.rs` with `#[cfg(test)] mod tests;`. Name tests after the behavior under test, such as `config_path_from_args_uses_explicit_c_value`. Add tests for parsing, formatting, URL construction, line protocol, and numeric register conversions. Avoid tests that require a live inverter or InfluxDB instance unless they are clearly marked and isolated from `cargo test`.
 
 ## Commit & Pull Request Guidelines
 
