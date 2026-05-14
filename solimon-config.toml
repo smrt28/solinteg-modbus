@@ -1,6 +1,6 @@
 host = "192.168.1.142"
 port = 502
-poll_interval_seconds = 10
+poll_interval_seconds = 15
 
 [influxdb]
 write_url = "http://127.0.0.1:8086/api/v2/write"
