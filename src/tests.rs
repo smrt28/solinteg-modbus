@@ -52,6 +52,7 @@ fn has_flag_rejects_missing_flag() {
 fn readings_serialize_to_json_keys() {
     let readings = Readings {
         pv_power_kw: 1.234,
+        grid_power_kw: 3.456,
         home_load_kw: 2.345,
         inverter_temp_c: 30.5,
         soc_percent: 88.0,
@@ -63,7 +64,7 @@ fn readings_serialize_to_json_keys() {
 
     assert_eq!(
         json,
-        "{\"pv_power_kw\":1.234,\"home_load_kw\":2.345,\"inverter_temp_c\":30.5,\"soc_percent\":88.0,\"battery_current_a\":-4.2,\"battery_power_kw\":-1.111}"
+        "{\"pv_power_kw\":1.234,\"grid_power_kw\":3.456,\"home_load_kw\":2.345,\"inverter_temp_c\":30.5,\"soc_percent\":88.0,\"battery_current_a\":-4.2,\"battery_power_kw\":-1.111}"
     );
 }
 
@@ -99,6 +100,7 @@ fn build_influx_line_protocol_includes_all_readings() {
     };
     let readings = Readings {
         pv_power_kw: 1.234,
+        grid_power_kw: 3.456,
         home_load_kw: 2.345,
         inverter_temp_c: 30.5,
         soc_percent: 88.0,
@@ -110,7 +112,7 @@ fn build_influx_line_protocol_includes_all_readings() {
 
     assert_eq!(
         payload,
-        "solinteg_readings,source=solinteg-read,device=garage-inverter pv_power_kw=1.234,home_load_kw=2.345,inverter_temp_c=30.5,soc_percent=88,battery_current_a=-4.2,battery_power_kw=-1.111 123"
+        "solinteg_readings,source=solinteg-read,device=garage-inverter pv_power_kw=1.234,grid_power_kw=3.456,home_load_kw=2.345,inverter_temp_c=30.5,soc_percent=88,battery_current_a=-4.2,battery_power_kw=-1.111 123"
     );
 }
 

@@ -39,6 +39,7 @@ struct InfluxDbConfig {
 #[derive(Serialize)]
 struct Readings {
     pv_power_kw: f32,
+    grid_power_kw: f32,
     home_load_kw: f32,
     inverter_temp_c: f32,
     soc_percent: f32,
@@ -88,6 +89,12 @@ async fn read_inverter(socket_addr: SocketAddr) -> Result<Readings> {
         .context("failed to read PV power registers")??;
     let pv_power_kw = pv[1] as f32 / 1000.0;
 
+    let grid_load = ctx // 11060
+        .read_holding_registers(11058, 2)
+        .await
+        .context("failed to read grid load registers")??;
+    let grid_power_kw = grid_load[1] as f32 / 1000.0;
+
     let home_load = ctx
         .read_holding_registers(11016, 2)
         .await
@@ -120,6 +127,7 @@ async fn read_inverter(socket_addr: SocketAddr) -> Result<Readings> {
 
     Ok(Readings {
         pv_power_kw,
+        grid_power_kw,
         home_load_kw,
         inverter_temp_c,
         soc_percent,
@@ -130,8 +138,9 @@ async fn read_inverter(socket_addr: SocketAddr) -> Result<Readings> {
 
 fn format_readings(readings: &Readings) -> String {
     format!(
-        "PV power:        {:.3} kW\nHome load:       {:.3} kW\nInverter temp:   {:.1} °C\nSOC:             {} %\nBattery current: {:.1} A\nBattery power:   {:.3} kW",
+        "PV power:        {:.3} kW\nGrid power:      {:.3} kW\nHome load:       {:.3} kW\nInverter temp:   {:.1} °C\nSOC:             {} %\nBattery current: {:.1} A\nBattery power:   {:.3} kW",
         readings.pv_power_kw,
+        readings.grid_power_kw,
         readings.home_load_kw,
         readings.inverter_temp_c,
         readings.soc_percent,
@@ -169,8 +178,9 @@ fn build_influx_line_protocol(
     }
 
     line.push_str(&format!(
-        " pv_power_kw={},home_load_kw={},inverter_temp_c={},soc_percent={},battery_current_a={},battery_power_kw={} {}",
+        " pv_power_kw={},grid_power_kw={},home_load_kw={},inverter_temp_c={},soc_percent={},battery_current_a={},battery_power_kw={} {}",
         readings.pv_power_kw,
+        readings.grid_power_kw,
         readings.home_load_kw,
         readings.inverter_temp_c,
         readings.soc_percent,
@@ -234,6 +244,7 @@ async fn push_to_influxdb(
 
 fn check_readings_consistency(readings: &Readings) -> bool {
     if readings.pv_power_kw > 60.0 ||
+        readings.grid_power_kw > 60.0 ||
         readings.home_load_kw > 60.0 ||
         readings.soc_percent > 100.0 ||
         readings.soc_percent < 0.0 {
