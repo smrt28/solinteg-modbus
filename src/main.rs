@@ -1,6 +1,7 @@
 // solinteg mht-10k-25
 
 use anyhow::{Context, Result};
+use clap::Parser;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -49,6 +50,17 @@ struct Readings {
     battery_power_kw: f32,
 }
 
+#[derive(Debug, Parser)]
+#[command(about = "Read Solinteg inverter data over Modbus TCP")]
+struct Cli {
+    #[arg(short = 'c', value_name = "config", help = "Read config from path")]
+    config: Option<PathBuf>,
+    #[arg(short = 'j', long = "json", help = "Print readings as JSON")]
+    json: bool,
+    #[arg(short = '1', help = "Read once and exit")]
+    one: bool,
+}
+
 fn default_poll_interval_seconds() -> u64 {
     5
 }
@@ -69,22 +81,14 @@ fn regs_to_i32_be(high: u16, low: u16) -> i32 {
     ((high as u32) << 16 | (low as u32)) as i32
 }
 
-fn config_path_from_args(args: &[String], home_dir: Option<&Path>) -> Result<PathBuf> {
-    if let Some(path) = args.windows(2).find(|w| w[0] == "-c").map(|w| &w[1]) {
-        return Ok(PathBuf::from(path));
+fn config_path_from_cli(cli: &Cli, home_dir: Option<&Path>) -> Result<PathBuf> {
+    if let Some(path) = &cli.config {
+        return Ok(path.clone());
     }
 
     let home_dir =
         home_dir.context("failed to determine home directory for default config path")?;
     Ok(home_dir.join(".config/solimon"))
-}
-
-fn has_flag(args: &[String], flag: &str) -> bool {
-    args.iter().any(|arg| arg == flag)
-}
-
-fn short_help() -> &'static str {
-    "Usage: solinteg-read [-c <config>] [-j] [-1] [-h]\n\nOptions:\n  -c <config>  Read config from path\n  -j           Print readings as JSON\n  -1           Read once and exit\n  -h           Print this help"
 }
 
 async fn read_inverter(socket_addr: SocketAddr) -> Result<Readings> {
@@ -280,16 +284,11 @@ fn check_readings_consistency(readings: &Readings) -> bool {
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
-    let args: Vec<String> = std::env::args().collect();
-    if has_flag(&args, "-h") {
-        println!("{}", short_help());
-        return Ok(());
-    }
-
-    let json_output = has_flag(&args, "-j");
-    let one = has_flag(&args, "-1");
+    let cli = Cli::parse();
+    let json_output = cli.json;
+    let one = cli.one;
     let config_path =
-        config_path_from_args(&args, std::env::var_os("HOME").as_deref().map(Path::new))?;
+        config_path_from_cli(&cli, std::env::var_os("HOME").as_deref().map(Path::new))?;
     let config_path_display = config_path.display().to_string();
 
     let config_str = std::fs::read_to_string(config_path)

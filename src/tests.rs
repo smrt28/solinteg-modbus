@@ -1,33 +1,39 @@
 use super::*;
+use clap::CommandFactory;
 use std::path::{Path, PathBuf};
 
 #[test]
-fn config_path_from_args_uses_explicit_c_value() {
-    let args = vec![
-        "solinteg-read".to_string(),
-        "-c".to_string(),
-        "/tmp/custom.toml".to_string(),
-    ];
+fn cli_parses_flags() {
+    let cli = Cli::try_parse_from(["solinteg-read", "-c", "/tmp/custom.toml", "-j", "-1"]).unwrap();
 
-    let path = config_path_from_args(&args, Some(Path::new("/home/test"))).unwrap();
+    assert_eq!(cli.config, Some(PathBuf::from("/tmp/custom.toml")));
+    assert!(cli.json);
+    assert!(cli.one);
+}
+
+#[test]
+fn config_path_from_cli_uses_explicit_c_value() {
+    let cli = Cli::try_parse_from(["solinteg-read", "-c", "/tmp/custom.toml"]).unwrap();
+
+    let path = config_path_from_cli(&cli, Some(Path::new("/home/test"))).unwrap();
 
     assert_eq!(path, PathBuf::from("/tmp/custom.toml"));
 }
 
 #[test]
-fn config_path_from_args_defaults_to_home_config_file() {
-    let args = vec!["solinteg-read".to_string()];
+fn config_path_from_cli_defaults_to_home_config_file() {
+    let cli = Cli::try_parse_from(["solinteg-read"]).unwrap();
 
-    let path = config_path_from_args(&args, Some(Path::new("/home/test"))).unwrap();
+    let path = config_path_from_cli(&cli, Some(Path::new("/home/test"))).unwrap();
 
     assert_eq!(path, PathBuf::from("/home/test/.config/solimon"));
 }
 
 #[test]
-fn config_path_from_args_errors_without_home_or_c_flag() {
-    let args = vec!["solinteg-read".to_string()];
+fn config_path_from_cli_errors_without_home_or_c_flag() {
+    let cli = Cli::try_parse_from(["solinteg-read"]).unwrap();
 
-    let err = config_path_from_args(&args, None).unwrap_err();
+    let err = config_path_from_cli(&cli, None).unwrap_err();
 
     assert!(err
         .to_string()
@@ -35,31 +41,21 @@ fn config_path_from_args_errors_without_home_or_c_flag() {
 }
 
 #[test]
-fn has_flag_detects_present_flag() {
-    let args = vec!["solinteg-read".to_string(), "-j".to_string()];
+fn cli_rejects_unknown_flags() {
+    let err = Cli::try_parse_from(["solinteg-read", "--bogus"]).unwrap_err();
 
-    assert!(has_flag(&args, "-j"));
+    assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
 }
 
 #[test]
-fn has_flag_rejects_missing_flag() {
-    let args = vec!["solinteg-read".to_string(), "-c".to_string()];
+fn cli_help_describes_supported_flags() {
+    let mut command = Cli::command();
+    let mut help = Vec::new();
 
-    assert!(!has_flag(&args, "-j"));
-}
+    command.write_help(&mut help).unwrap();
+    let help = String::from_utf8(help).unwrap();
 
-#[test]
-fn has_flag_detects_help_flag() {
-    let args = vec!["solinteg-read".to_string(), "-h".to_string()];
-
-    assert!(has_flag(&args, "-h"));
-}
-
-#[test]
-fn short_help_describes_supported_flags() {
-    let help = short_help();
-
-    assert!(help.contains("Usage: solinteg-read"));
+    assert!(help.contains("Usage:"));
     assert!(help.contains("-c <config>"));
     assert!(help.contains("-j"));
     assert!(help.contains("-1"));
