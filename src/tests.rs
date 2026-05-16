@@ -49,6 +49,24 @@ fn has_flag_rejects_missing_flag() {
 }
 
 #[test]
+fn has_flag_detects_help_flag() {
+    let args = vec!["solinteg-read".to_string(), "-h".to_string()];
+
+    assert!(has_flag(&args, "-h"));
+}
+
+#[test]
+fn short_help_describes_supported_flags() {
+    let help = short_help();
+
+    assert!(help.contains("Usage: solinteg-read"));
+    assert!(help.contains("-c <config>"));
+    assert!(help.contains("-j"));
+    assert!(help.contains("-1"));
+    assert!(help.contains("-h"));
+}
+
+#[test]
 fn readings_serialize_to_json_keys() {
     let readings = Readings {
         pv_power_kw: 1.234,

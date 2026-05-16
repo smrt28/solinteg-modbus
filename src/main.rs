@@ -83,6 +83,10 @@ fn has_flag(args: &[String], flag: &str) -> bool {
     args.iter().any(|arg| arg == flag)
 }
 
+fn short_help() -> &'static str {
+    "Usage: solinteg-read [-c <config>] [-j] [-1] [-h]\n\nOptions:\n  -c <config>  Read config from path\n  -j           Print readings as JSON\n  -1           Read once and exit\n  -h           Print this help"
+}
+
 async fn read_inverter(socket_addr: SocketAddr) -> Result<Readings> {
     let slave = Slave(255);
     let mut ctx = tcp::connect_slave(socket_addr, slave)
@@ -277,6 +281,11 @@ fn check_readings_consistency(readings: &Readings) -> bool {
 async fn main() -> Result<()> {
     env_logger::init();
     let args: Vec<String> = std::env::args().collect();
+    if has_flag(&args, "-h") {
+        println!("{}", short_help());
+        return Ok(());
+    }
+
     let json_output = has_flag(&args, "-j");
     let one = has_flag(&args, "-1");
     let config_path =
