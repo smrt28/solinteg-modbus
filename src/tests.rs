@@ -4,11 +4,20 @@ use std::path::{Path, PathBuf};
 
 #[test]
 fn cli_parses_flags() {
-    let cli = Cli::try_parse_from(["solinteg-read", "-c", "/tmp/custom.toml", "-j", "-1"]).unwrap();
+    let cli = Cli::try_parse_from([
+        "solinteg-read",
+        "-c",
+        "/tmp/custom.toml",
+        "-j",
+        "-1",
+        "--dump-config",
+    ])
+    .unwrap();
 
     assert_eq!(cli.config, Some(PathBuf::from("/tmp/custom.toml")));
     assert!(cli.json);
     assert!(cli.one);
+    assert!(cli.dump_config);
 }
 
 #[test]
@@ -60,6 +69,7 @@ fn cli_help_describes_supported_flags() {
     assert!(help.contains("-j"));
     assert!(help.contains("-1"));
     assert!(help.contains("-h"));
+    assert!(help.contains("--dump-config"));
 }
 
 #[test]
@@ -97,6 +107,36 @@ write_url = "https://influx.example.com/api/v2/write"
 
     assert_eq!(config.poll_interval_seconds, 5);
     assert_eq!(config.influxdb.measurement, "solinteg_readings");
+}
+
+#[test]
+fn dump_config_includes_defaults_and_redacts_secrets() {
+    let config: Config = toml::from_str(
+        r#"
+host = "192.168.1.142"
+port = 502
+
+[influxdb]
+write_url = "https://influx.example.com/api/v2/write"
+token = "secret-token"
+password = "secret-password"
+username = "reader"
+bucket = "solar"
+"#,
+    )
+    .unwrap();
+
+    let dump = dump_config(&config).unwrap();
+
+    assert!(dump.contains("host = \"192.168.1.142\""));
+    assert!(dump.contains("poll_interval_seconds = 5"));
+    assert!(dump.contains("read_timeout_seconds = 5"));
+    assert!(dump.contains("measurement = \"solinteg_readings\""));
+    assert!(dump.contains("token = \"[redacted]\""));
+    assert!(dump.contains("password = \"[redacted]\""));
+    assert!(dump.contains("username = \"reader\""));
+    assert!(!dump.contains("secret-token"));
+    assert!(!dump.contains("secret-password"));
 }
 
 #[test]

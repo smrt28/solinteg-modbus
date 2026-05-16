@@ -59,6 +59,37 @@ struct Cli {
     json: bool,
     #[arg(short = '1', help = "Read once and exit")]
     one: bool,
+    #[arg(long = "dump-config", help = "Print configured values and exit")]
+    dump_config: bool,
+}
+
+#[derive(Serialize)]
+struct ConfigDump<'a> {
+    host: &'a str,
+    port: u16,
+    poll_interval_seconds: u64,
+    read_timeout_seconds: u64,
+    influxdb: InfluxDbConfigDump<'a>,
+}
+
+#[derive(Serialize)]
+struct InfluxDbConfigDump<'a> {
+    write_url: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    token: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    username: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    password: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    database: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    org: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bucket: Option<&'a str>,
+    measurement: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    device: Option<&'a str>,
 }
 
 fn default_poll_interval_seconds() -> u64 {
@@ -89,6 +120,32 @@ fn config_path_from_cli(cli: &Cli, home_dir: Option<&Path>) -> Result<PathBuf> {
     let home_dir =
         home_dir.context("failed to determine home directory for default config path")?;
     Ok(home_dir.join(".config/solimon"))
+}
+
+fn configured_secret_marker(value: &Option<String>) -> Option<&'static str> {
+    value.as_ref().map(|_| "[redacted]")
+}
+
+fn dump_config(config: &Config) -> Result<String> {
+    let dump = ConfigDump {
+        host: &config.host,
+        port: config.port,
+        poll_interval_seconds: config.poll_interval_seconds,
+        read_timeout_seconds: config.read_timeout_seconds,
+        influxdb: InfluxDbConfigDump {
+            write_url: &config.influxdb.write_url,
+            token: configured_secret_marker(&config.influxdb.token),
+            username: config.influxdb.username.as_deref(),
+            password: configured_secret_marker(&config.influxdb.password),
+            database: config.influxdb.database.as_deref(),
+            org: config.influxdb.org.as_deref(),
+            bucket: config.influxdb.bucket.as_deref(),
+            measurement: &config.influxdb.measurement,
+            device: config.influxdb.device.as_deref(),
+        },
+    };
+
+    toml::to_string_pretty(&dump).context("failed to serialize config dump")
 }
 
 async fn read_inverter(socket_addr: SocketAddr) -> Result<Readings> {
@@ -295,6 +352,11 @@ async fn main() -> Result<()> {
         .with_context(|| format!("failed to read {config_path_display}"))?;
     let config: Config = toml::from_str(&config_str)
         .with_context(|| format!("failed to parse {config_path_display}"))?;
+    if cli.dump_config {
+        print!("{}", dump_config(&config)?);
+        return Ok(());
+    }
+
     let socket_addr: SocketAddr = format!("{}:{}", config.host, config.port)
         .parse()
         .context("failed to parse inverter host/port")?;
