@@ -242,6 +242,38 @@ fn current_timestamp_nanos() -> Result<String> {
         .to_string())
 }
 
+fn current_timestamp_seconds() -> Result<String> {
+    Ok(SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system time is before UNIX_EPOCH")?
+        .as_secs()
+        .to_string())
+}
+
+fn prefix_output_with_timestamp(timestamp: &str, output: &str) -> String {
+    output
+        .lines()
+        .map(|line| format!("{timestamp} {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn print_timestamped_output(output: &str) -> Result<()> {
+    println!(
+        "{}",
+        prefix_output_with_timestamp(&current_timestamp_seconds()?, output)
+    );
+    Ok(())
+}
+
+fn print_timestamped_error(output: &str) -> Result<()> {
+    eprintln!(
+        "{}",
+        prefix_output_with_timestamp(&current_timestamp_seconds()?, output)
+    );
+    Ok(())
+}
+
 fn escape_tag(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -392,18 +424,18 @@ async fn main() -> Result<()> {
                     continue;
                 }
                 if json_output {
-                    println!("{}", serde_json::to_string(&readings)?);
+                    print_timestamped_output(&serde_json::to_string(&readings)?)?;
                 } else {
-                    println!("{}", format_readings(&readings));
+                    print_timestamped_output(&format_readings(&readings))?;
                 }
 
                 if !one {
                     if let Err(err) = push_to_influxdb(&client, &config.influxdb, &readings).await {
-                        eprintln!("influxdb push error: {err:#}");
+                        print_timestamped_error(&format!("influxdb push error: {err:#}"))?;
                     }
                 }
             }
-            Err(err) => eprintln!("inverter read error: {err:#}"),
+            Err(err) => print_timestamped_error(&format!("inverter read error: {err:#}"))?,
         }
 
         if one {

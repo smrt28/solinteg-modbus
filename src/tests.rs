@@ -93,6 +93,13 @@ fn readings_serialize_to_json_keys() {
 }
 
 #[test]
+fn prefix_output_with_timestamp_prefixes_each_line() {
+    let output = prefix_output_with_timestamp("1234567890", "first\nsecond");
+
+    assert_eq!(output, "1234567890 first\n1234567890 second");
+}
+
+#[test]
 fn config_defaults_poll_interval_and_measurement() {
     let config: Config = toml::from_str(
         r#"
