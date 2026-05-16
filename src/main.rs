@@ -18,6 +18,8 @@ struct Config {
     port: u16,
     #[serde(default = "default_poll_interval_seconds")]
     poll_interval_seconds: u64,
+    #[serde(default = "default_read_timeout_seconds")]
+    read_timeout_seconds: u64,
     #[serde(alias = "grafana")]
     influxdb: InfluxDbConfig,
 }
@@ -48,6 +50,10 @@ struct Readings {
 }
 
 fn default_poll_interval_seconds() -> u64 {
+    5
+}
+
+fn default_read_timeout_seconds() -> u64 {
     5
 }
 
@@ -134,6 +140,20 @@ async fn read_inverter(socket_addr: SocketAddr) -> Result<Readings> {
         battery_current_a,
         battery_power_kw,
     })
+}
+
+async fn read_inverter_with_timeout(
+    socket_addr: SocketAddr,
+    read_timeout: Duration,
+) -> Result<Readings> {
+    tokio::time::timeout(read_timeout, read_inverter(socket_addr))
+        .await
+        .with_context(|| {
+            format!(
+                "inverter did not respond within {} seconds",
+                read_timeout.as_secs()
+            )
+        })?
 }
 
 fn format_readings(readings: &Readings) -> String {
@@ -272,10 +292,11 @@ async fn main() -> Result<()> {
         .context("failed to parse inverter host/port")?;
     let client = reqwest::Client::new();
     let poll_interval = Duration::from_secs(config.poll_interval_seconds.max(1));
+    let read_timeout = Duration::from_secs(config.read_timeout_seconds.max(1));
     let mut ticker = tokio::time::interval(poll_interval);
 
     if one {
-        match read_inverter(socket_addr).await {
+        match read_inverter_with_timeout(socket_addr, read_timeout).await {
             Ok(readings) => {
                 if !check_readings_consistency(&readings) {
                     info!("reading failed");
@@ -294,7 +315,7 @@ async fn main() -> Result<()> {
 
     loop {
         ticker.tick().await;
-        match read_inverter(socket_addr).await {
+        match read_inverter_with_timeout(socket_addr, read_timeout).await {
             Ok(readings) => {
                 if !check_readings_consistency(&readings) {
                     info!("reading failed");
