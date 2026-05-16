@@ -94,9 +94,19 @@ fn readings_serialize_to_json_keys() {
 
 #[test]
 fn prefix_output_with_timestamp_prefixes_each_line() {
-    let output = prefix_output_with_timestamp("1234567890", "first\nsecond");
+    let output = prefix_output_with_timestamp("2026-05-16 14:03:22 UTC", "first\nsecond");
 
-    assert_eq!(output, "1234567890 first\n1234567890 second");
+    assert_eq!(
+        output,
+        "2026-05-16 14:03:22 UTC first\n2026-05-16 14:03:22 UTC second"
+    );
+}
+
+#[test]
+fn format_human_timestamp_uses_utc_calendar_time() {
+    let output = format_human_timestamp(SystemTime::UNIX_EPOCH);
+
+    assert_eq!(output, "1970-01-01 00:00:00 UTC");
 }
 
 #[test]

@@ -1,6 +1,7 @@
 // solinteg mht-10k-25
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use clap::Parser;
 use log::info;
 use serde::{Deserialize, Serialize};
@@ -242,12 +243,13 @@ fn current_timestamp_nanos() -> Result<String> {
         .to_string())
 }
 
-fn current_timestamp_seconds() -> Result<String> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system time is before UNIX_EPOCH")?
-        .as_secs()
-        .to_string())
+fn format_human_timestamp(timestamp: SystemTime) -> String {
+    let timestamp: DateTime<Utc> = timestamp.into();
+    timestamp.format("%Y-%m-%d %H:%M:%S UTC").to_string()
+}
+
+fn current_human_timestamp() -> String {
+    format_human_timestamp(SystemTime::now())
 }
 
 fn prefix_output_with_timestamp(timestamp: &str, output: &str) -> String {
@@ -261,7 +263,7 @@ fn prefix_output_with_timestamp(timestamp: &str, output: &str) -> String {
 fn print_timestamped_output(output: &str) -> Result<()> {
     println!(
         "{}",
-        prefix_output_with_timestamp(&current_timestamp_seconds()?, output)
+        prefix_output_with_timestamp(&current_human_timestamp(), output)
     );
     Ok(())
 }
@@ -269,7 +271,7 @@ fn print_timestamped_output(output: &str) -> Result<()> {
 fn print_timestamped_error(output: &str) -> Result<()> {
     eprintln!(
         "{}",
-        prefix_output_with_timestamp(&current_timestamp_seconds()?, output)
+        prefix_output_with_timestamp(&current_human_timestamp(), output)
     );
     Ok(())
 }
